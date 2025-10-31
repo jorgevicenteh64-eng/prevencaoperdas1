@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Lista de Baixa - Z43 (Corrigido)</title>
+    <!-- Carrega o Tailwind CSS para estilização -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- === NOVAS BIBLIOTECAS === -->
+    <!-- BIBLIOTECA SHEETJS (XLSX) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- BIBLIOTECA jsPDF (Gerar PDF) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- NOVO: jsPDF AutoTable para criar tabelas nativas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <!-- BIBLIOTECA JsBarcode (Códigos de Barras) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>
+    
+    <style>
+        /* Fonte Inter */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* bg-gray-900 */
+            color: #E5E7EB; /* bg-gray-200 */
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1F2937; /* bg-gray-800 */ }
+        ::-webkit-scrollbar-thumb { background: #4B5563; /* bg-gray-600 */ border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6B7280; /* bg-gray-500 */ }
+        
+        /* Estilos de Impressão (Mantidos como estão) */
+        @media print {
+            body {
+                background-color: #ffffff;
+                color: #000000;
+            }
+            /* Esconde tudo, exceto a área de impressão da página HTML */
+            body > *:not(#print-section) {
+                display: none;
+            }
+            /* Esconde o iframe de impressão de PDF */
+            #print-pdf-frame {
+                display: none;
+            }
+            #main-container > div:not(#print-section) {
+                display: none;
+            }
+            #print-section {
+                display: block !important;
+                box-shadow: none;
+                border: none;
+                padding: 0;
+                margin: 0;
+                width: 100%;
+                max-width: 100%;
+                background-color: #ffffff !important; /* Garante fundo branco */
+                color: #000000 !important; /* Garante texto preto */
+            }
+            #print-header, #print-controls {
+                display: none;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                color-adjust: exact; /* Garante que estilos sejam impressos */
+                -webkit-print-color-adjust: exact;
+            }
+            th, td {
+                border: 1px solid #ccc !important;
+                padding: 8px;
+                font-size: 10pt;
+                color: #000000 !important; /* Texto preto para impressão */
+                background-color: #ffffff !important; /* Fundo branco para impressão */
+            }
+            /* Garante que o cabeçalho da tabela de impressão seja leve */
+            #print-section thead {
+                 background-color: #f3f4f6 !important; /* bg-gray-100 */
+            }
+            tr {
+                page-break-inside: avoid;
+            }
+            svg.barcode {
+                height: 40px !important;
+                width: auto !important;
+            }
+            /* Garante que o SVG do barcode seja preto na impressão */
+            svg.barcode > rect {
+                fill: #ffffff !important;
+            }
+            svg.barcode > g > rect {
+                 fill: #000000 !important;
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <!-- === TELA DE BOAS-VINDAS ADICIONADA === -->
+    <!-- Este overlay cobre a tela inteira -->
+    <div id="welcome-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 transition-opacity duration-500">
+        <!-- Card centralizado -->
+        <div class="bg-gray-800 shadow-2xl rounded-2xl p-8 max-w-md w-full text-center transition-all duration-300">
+            <!-- Ícone (um "check" para Prevenção de Perdas) -->
+            <svg class="w-16 h-16 mx-auto text-blue-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            
+            <h1 class="text-2xl font-bold text-white mb-3">Ferramenta de Baixa Z43</h1>
+            <p class="text-gray-300 mb-6">
+                Esta ferramenta foi criada pelo time de <strong class="font-semibold text-blue-400">Prevenção de Perdas</strong> 
+                para facilitar e otimizar o processo de baixa Z43.
+            </p>
+            <button id="start-button" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg px-6 py-3 text-lg focus:outline-none focus:ring-4 focus:ring-blue-800 transition duration-300 transform hover:scale-105">
+                Iniciar
+            </button>
+        </div>
+    </div>
+    <!-- === FIM DA TELA DE BOAS-VINDAS === -->
+
+
+    <div id="main-container" class="max-w-6xl mx-auto hidden"> <!-- <-- CLASSE 'hidden' ADICIONADA AQUI -->
+        <!-- Cabeçalho (Mantido escuro) -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-white mb-2">Gerador de Lista de Baixa Z43</h1>
+            <p class="text-lg text-gray-400">Construa uma lista de baixa agregada com códigos de barras.</p>
+        </header>
+
+        <!-- Etapa 1: Carregar Base (Mantido escuro) -->
+        <div class="bg-gray-800 shadow-xl rounded-2xl p-6 md:p-8 mb-8">
+            <h2 class="text-xl font-semibold text-white mb-4">1. Carregar Base de Dados</h2>
+            <div class="flex items-center space-x-4">
+                <input type="file" id="file-upload" accept=".xlsx, .xls" class="block w-full text-sm text-gray-400
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-lg file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-blue-600 file:text-white
+                    hover:file:bg-blue-700
+                    cursor-pointer"/>
+            </div>
+            <p id="upload-status" class="text-sm text-gray-400 mt-3">Aguardando arquivo XLSX/XLS...</p>
+        </div>
+
+        <!-- Etapa 2: Adicionar Produtos (Mantido escuro) -->
+        <div id="add-panel" class="bg-gray-800 shadow-xl rounded-2xl p-6 md:p-8 mb-8 opacity-50 pointer-events-none">
+            <h2 class="text-xl font-semibold text-white mb-4">2. Adicionar Produtos à Lista</h2>
+            
+            <div class="flex items-center justify-center space-x-4 mb-6">
+                <span id="label-un" class="text-lg font-medium text-gray-400 transition-colors">UN (Manual)</span>
+                <label for="mode-toggle" class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" id="mode-toggle" class="sr-only peer" checked> 
+                    <div class="w-14 h-8 bg-gray-600 rounded-full peer peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-800 peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-1 after:left-1 after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:after:translate-x-full"></div>
+                </label>
+                <span id="label-kg" class="text-lg font-medium text-white transition-colors">KG (Automático)</span>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
+                <div class="md:col-span-3">
+                    <label for="search-input" class="block text-sm font-medium text-gray-300 mb-2">EAN (Exibir) ou Cód. Interno</label>
+                    <input type="text" id="search-input" placeholder="Leia o código de barras..." class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200">
+                </div>
+                <div class="md:col-span-1 flex items-end">
+                    <button id="add-button" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-gray-800 transition duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block -mt-1 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                          <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                        </svg>
+                        Adicionar
+                    </button>
+                </div>
+                <div id="quantity-group" class="md:col-span-4 hidden">
+                    <label for="quantity-input" class="block text-sm font-medium text-gray-300 mb-2">Quantidade (para item não pesado)</label>
+                    <input type="number" id="quantity-input" placeholder="Ex: 1.5" step="0.01" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200">
+                    <p class="text-xs text-gray-400 mt-1">Pressione 'Enter' para adicionar.</p>
+                </div>
+                <div class="md:col-span-4">
+                    <div id="add-message" class="text-sm text-yellow-400 mt-3 h-4"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Etapa 3: Lista de Produtos Adicionados (MUDADO PARA BRANCO) -->
+        <div id="product-list-section" class="bg-white shadow-xl rounded-2xl p-6 md:p-8 mb-8 hidden">
+             <!-- === BOTÃO ADICIONADO AQUI === -->
+             <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold text-gray-900">Produtos na Lista de Baixa</h2>
+                <button id="clear-list-button" class="text-sm bg-red-100 text-red-700 hover:bg-red-200 font-medium rounded-lg px-4 py-2 transition-colors duration-200">
+                    Limpar Lista
+                </button>
+             </div>
+             <!-- === FIM DA ADIÇÃO === -->
+             <div id="product-list-container" class="max-h-60 overflow-y-auto pr-2">
+                <!-- Tabela com cores claras -->
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-100 sticky top-0">
+                        <tr>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Produto (Exibir)</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Quantidade</th>
+                            <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-gray-600 uppercase tracking-wider">Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody id="product-list-body" class="bg-white divide-y divide-gray-200">
+                        <!-- Produtos adicionados aqui (JS vai usar cores claras) -->
+                    </tbody>
+                </table>
+             </div>
+             <p id="empty-product-list" class="text-center text-gray-500 py-4">Nenhum produto adicionado ainda.</p>
+        </div>
+
+
+        <!-- Etapa 4: Lista de Baixa Final (MUDADO PARA BRANCO) -->
+        <div id="print-section" class="mt-8 bg-white shadow-xl rounded-2xl p-6 md:p-8 hidden">
+            
+            <div id="print-header" class="flex justify-between items-center mb-6">
+                <!-- Texto escuro -->
+                <h2 class="text-2xl font-semibold text-gray-900">Lista de Baixa Agregada</h2>
+                
+                <!-- === BOTÕES ATUALIZADOS === -->
+                <div id="print-controls" class="flex flex-wrap gap-3">
+                    <button id="print-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg px-5 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200">
+                        Imprimir (Página)
+                    </button>
+                    <!-- NOVO BOTÃO DE IMPRIMIR PDF -->
+                    <button id="print-pdf-button" class="bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg px-5 py-2.5 focus:outline-none focus:ring-2 focus:ring-teal-500 transition duration-200">
+                        Imprimir (PDF)
+                    </button>
+                    <!-- BOTÃO DE GERAR PDF AGORA É BAIXAR PDF -->
+                    <button id="pdf-button" class="bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg px-5 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500 transition duration-200">
+                        Baixar PDF
+                    </button>
+                </div>
+                <!-- === FIM DOS BOTÕES ATUALIZADOS === -->
+
+            </div>
+
+            <!-- Tabela de Componentes Agregados (Cores claras) -->
+            <div id="final-list-container" class="overflow-x-auto rounded-lg border border-gray-200">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Cód. Componente (Col. G)</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Descrição (Col. H)</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Un.</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider bg-gray-200">Qtd. Total Baixa</th>
+                            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Código de Barras</th>
+                        </tr>
+                    </thead>
+                    <tbody id="results-table-body" class="bg-white divide-y divide-gray-200">
+                        <!-- Linhas serão inseridas dinamicamente aqui (JS vai usar cores claras) -->
+                    </tbody>
+                </table>
+                 <p id="empty-final-list" class="text-center text-gray-500 py-6">A lista de componentes agregados aparecerá aqui.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // === LÓGICA DA TELA DE BOAS-VINDAS ===
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const startButton = document.getElementById('start-button');
+        const mainContainer = document.getElementById('main-container');
+
+        startButton.addEventListener('click', () => {
+            // Efeito de fade-out na tela de boas-vindas
+            welcomeScreen.classList.add('opacity-0');
+            
+            // Remove a tela e mostra o conteúdo principal após a animação
+            setTimeout(() => {
+                welcomeScreen.style.display = 'none';
+                mainContainer.classList.remove('hidden');
+            }, 500); // Deve corresponder à duração da transição (duration-500)
+        });
+        // === FIM DA LÓGICA ===
+
+
+        // --- INÍCIO DA BASE DE DADOS ---
+        let database = [];
+        let productList = []; 
+        let componentMap = new Map();
+        // --- FIM DA BASE DE DADOS ---
+
+        // Referências do DOM
+        const fileUpload = document.getElementById('file-upload');
+        const uploadStatus = document.getElementById('upload-status');
+        const addPanel = document.getElementById('add-panel');
+        const searchInput = document.getElementById('search-input');
+        const quantityInput = document.getElementById('quantity-input');
+        const quantityGroup = document.getElementById('quantity-group');
+        const modeToggle = document.getElementById('mode-toggle');
+        const labelUn = document.getElementById('label-un');
+        const labelKg = document.getElementById('label-kg');
+        const addButton = document.getElementById('add-button');
+        const addMessage = document.getElementById('add-message');
+        
+        const productListSection = document.getElementById('product-list-section');
+        const productListBody = document.getElementById('product-list-body');
+        const emptyProductList = document.getElementById('empty-product-list');
+        const clearListButton = document.getElementById('clear-list-button'); 
+
+        const printSection = document.getElementById('print-section');
+        const finalTableBody = document.getElementById('results-table-body');
+        const emptyFinalList = document.getElementById('empty-final-list');
+        
+        // === REFERÊNCIAS DE BOTÕES ATUALIZADAS ===
+        const printButton = document.getElementById('print-button'); // Imprimir (Página)
+        const pdfButton = document.getElementById('pdf-button'); // Baixar PDF
+        const printPdfButton = document.getElementById('print-pdf-button'); // Imprimir (PDF)
+        
+        // --- INICIALIZAÇÃO ---
+        fileUpload.addEventListener('change', handleFileUpload);
+        addButton.addEventListener('click', handleAddToList);
+        clearListButton.addEventListener('click', handleClearList);
+
+        // === EVENTOS DOS BOTÕES ATUALIZADOS ===
+        printButton.addEventListener('click', () => window.print()); // Imprime a página HTML
+        pdfButton.addEventListener('click', handleDownloadPDF); // Baixa o PDF
+        printPdfButton.addEventListener('click', handlePrintPDF); // Imprime o PDF
+        // === FIM DOS EVENTOS ===
+
+
+        modeToggle.addEventListener('change', () => {
+            if (modeToggle.checked) { // Modo KG
+                labelKg.classList.add('text-white');
+                labelKg.classList.remove('text-gray-400');
+                labelUn.classList.add('text-gray-400');
+                labelUn.classList.remove('text-white');
+            } else { // Modo UN
+                labelUn.classList.add('text-white');
+                labelUn.classList.remove('text-gray-400');
+                labelKg.classList.add('text-gray-400');
+                labelKg.classList.remove('text-white');
+            }
+        });
+ 
+        quantityInput.addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') handleAddToList();
+        });
+        
+        searchInput.addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') {
+                handleBarcodeParse(); 
+            }
+        });
+
+        // --- LÓGICA DE UPLOAD ---
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                uploadStatus.textContent = 'Nenhum arquivo selecionado.';
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: "" });
+
+                    database = jsonData.map(row => {
+                        let qtdComponente = row['Qtd.componente'];
+                        if (typeof qtdComponente === 'string') {
+                            qtdComponente = qtdComponente.replace(',', '.');
+                        }
+                        return { ...row, 'Qtd.componente': qtdComponente };
+                    });
+
+                    if (database.length > 0) {
+                        uploadStatus.textContent = `Base carregada com ${database.length} linhas. Pronto para consultar.`;
+                        uploadStatus.classList.remove('text-red-400');
+                        uploadStatus.classList.add('text-green-400');
+                        addPanel.classList.remove('opacity-50', 'pointer-events-none');
+                    } else {
+                        throw new Error('XLSX vazio ou inválido.');
+                    }
+                } catch (error) {
+                    console.error(error);
+                    uploadStatus.textContent = `Erro ao ler o arquivo: ${error.message}`;
+                    uploadStatus.classList.add('text-red-400');
+                    addPanel.classList.add('opacity-50', 'pointer-events-none');
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // --- LÓGICA DE ADICIONAR PRODUTOS (ATUALIZADA) ---
+        function handleAddToList() {
+            const searchTerm = searchInput.value; 
+            const quantityValue = quantityInput.value;
+            
+            showMessage('', 'add-message');
+
+            if (!searchTerm || !quantityValue) {
+                showMessage('Preencha o Cód. Interno e a Quantidade.', 'add-message');
+                return;
+            }
+            const quantity = parseFloat(quantityValue.replace(',', '.'));
+            if (isNaN(quantity) || quantity <= 0) {
+                showMessage('A quantidade deve ser um número positivo.', 'add-message');
+                return;
+            }
+
+            autoAddItem(searchTerm, quantity);
+        }
+        
+        function handleBarcodeParse() {
+            const rawInput = searchInput.value;
+            if (!rawInput) return;
+            
+            const isKgMode = modeToggle.checked;
+            const parsedData = parseBarcode(rawInput); 
+            
+            if (isKgMode && parsedData.quantity !== null) {
+                autoAddItem(parsedData.code, parsedData.quantity);
+            } 
+            else {
+                searchInput.value = parsedData.code; 
+                quantityGroup.classList.remove('hidden');
+                quantityInput.focus();
+            }
+        }
+
+        function autoAddItem(code, quantity) {
+            const mainProduct = database.find(item => item['EAN exibir'] === code || item.EXIBIR === code);
+
+            if (!mainProduct) {
+                showMessage(`Produto "Exibir" não encontrado para o código: ${code}`, 'add-message');
+                searchInput.value = '';
+                searchInput.focus();
+                return false;
+            }
+            
+            productList.push({
+                id: crypto.randomUUID(),
+                product: mainProduct,
+                quantity: quantity
+            });
+            
+            searchInput.value = ''; 
+            quantityInput.value = '';
+            quantityGroup.classList.add('hidden');
+            searchInput.focus();
+
+            renderProductList();
+            updateFinalListComponentes();
+            
+            showMessage(`Adicionado: ${mainProduct['Descrição exibir']} (${quantity.toFixed(3).replace('.',',')})`, 'add-message');
+            
+            return true;
+        }
+
+
+        // --- FUNÇÃO PARA LIMPAR A LISTA ---
+        function handleClearList() {
+            productList = [];
+            componentMap.clear();
+            renderProductList();
+            updateFinalListComponentes();
+            
+            // Opcional: mostrar uma mensagem e focar no input
+            showMessage('Lista de produtos limpa.', 'add-message');
+            searchInput.focus();
+        }
+
+        // --- RENDERIZA A LISTA DE PRODUTOS (PAINEL 3) ---
+        // *** ATUALIZADO COM CLASSES DE TEXTO ESCURO ***
+        function renderProductList() {
+            if (productList.length === 0) {
+                productListSection.classList.add('hidden');
+                return;
+            }
+            
+            productListSection.classList.remove('hidden');
+            emptyProductList.classList.add('hidden');
+            productListBody.innerHTML = ''; 
+
+            productList.forEach(item => {
+                const row = document.createElement('tr');
+                row.classList.add('hover:bg-gray-50'); // Hover claro
+                row.innerHTML = `
+                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${item.product['Descrição exibir']}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">${item.quantity.toFixed(3).replace('.',',')}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-right">
+                        <button data-id="${item.id}" class="remove-btn text-red-500 hover:text-red-700 transition-colors">Remover</button>
+                    </td>
+                `;
+                productListBody.appendChild(row);
+            });
+
+            document.querySelectorAll('.remove-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const idToRemove = e.target.dataset.id;
+                    productList = productList.filter(item => item.id !== idToRemove);
+                    renderProductList();
+                    updateFinalListComponentes();
+                });
+            });
+        }
+
+        // --- ATUALIZA A LISTA FINAL AGREGADA (PAINEL 4) ---
+        // *** ATUALIZADO COM CLASSES DE TEXTO ESCURO E BARCODE PRETO ***
+        function updateFinalListComponentes() {
+            if (productList.length === 0) {
+                printSection.classList.add('hidden');
+                return;
+            }
+            
+            printSection.classList.remove('hidden');
+            emptyFinalList.classList.add('hidden');
+            finalTableBody.innerHTML = ''; 
+
+            componentMap = new Map();
+
+            productList.forEach(item => {
+                const mainProductCod = item.product.EXIBIR;
+                const quantity = item.quantity;
+                
+                const components = database.filter(dbItem => dbItem.EXIBIR === mainProductCod);
+                
+                components.forEach(comp => {
+                    const componentCode = comp['Componente'];
+                    const standardQty = parseFloat(comp['Qtd.componente']);
+                    
+                    if (isNaN(standardQty)) return;
+
+                    const proportionalQty = standardQty * quantity;
+
+                    if (!componentMap.has(componentCode)) {
+                        componentMap.set(componentCode, {
+                            description: comp['Descrição componente'],
+                            unit: comp['Unid.med.componente'],
+                            totalQty: 0
+                        });
+                    }
+                    
+                    componentMap.get(componentCode).totalQty += proportionalQty;
+                });
+            });
+
+            // Renderiza a tabela final com cores claras
+            componentMap.forEach((data, code) => {
+                const row = document.createElement('tr');
+                row.classList.add('hover:bg-gray-50'); // Hover claro
+                
+                const barcodeId = `barcode-${code}`;
+
+                row.innerHTML = `
+                    <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${code}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">${data.description}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-600">${data.unit}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-blue-700 bg-blue-50">${data.totalQty.toFixed(3).replace('.',',')}</td>
+                    <td class="px-4 py-3">
+                        <svg id="${barcodeId}" class="barcode"></svg>
+                    </td>
+                `;
+                finalTableBody.appendChild(row);
+
+                // Gera o código de barras
+                try {
+                    JsBarcode(`#${barcodeId}`, code, {
+                        format: "CODE128",
+                        displayValue: true,
+                        text: code,
+                        fontSize: 14,
+                        margin: 5,
+                        height: 50,
+                        background: 'transparent', // Fundo transparente (pega o bg-white da célula)
+                        lineColor: '#000000' // *** MUDADO PARA PRETO ***
+                    });
+                } catch (e) {
+                    console.error(`Erro ao gerar código de barras para ${code}: ${e}`);
+                    document.getElementById(barcodeId).outerHTML = `<span class="text-xs text-red-500">Erro</span>`;
+                }
+            });
+            
+             if(componentMap.size === 0) {
+                 emptyFinalList.classList.remove('hidden');
+             }
+        }
+
+        // --- LÓGICA DE GERAÇÃO DE PDF (REFATORADA) ---
+
+        // 1. FUNÇÃO AUXILIAR QUE APENAS GERA O DOCUMENTO PDF
+        // (Semelhante à antiga handleGeneratePDF, mas apenas retorna o objeto pdf)
+        function generatePDFDocument() {
+            const { jsPDF } = window.jspdf; 
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'pt',
+                format: 'a4'
+            });
+
+            pdf.setFontSize(16);
+            pdf.text("Lista de Baixa Agregada", 40, 40);
+
+            const head = [['Cód. Componente', 'Descrição', 'Un.', 'Qtd. Total', 'Código de Barras']];
+            const body = [];
+            const tempCanvas = document.createElement('canvas');
+
+            for (const [code, data] of componentMap.entries()) {
+                body.push([
+                    code,
+                    data.description,
+                    data.unit,
+                    data.totalQty.toFixed(3).replace('.',','),
+                    code // Passa o código como 'raw' para o hook didDrawCell
+                ]);
+            }
+
+            pdf.autoTable({
+                head: head,
+                body: body,
+                startY: 50,
+                theme: 'grid',
+                rowPageBreak: 'avoid',
+                styles: {
+                    fontSize: 8,
+                    cellPadding: 4,
+                    valign: 'middle'
+                },
+                // Hook para desenhar as imagens do código de barras
+                didDrawCell: (data) => {
+                    if (data.column.index === 4 && data.cell.section === 'body') {
+                        const code = data.cell.raw;
+                        data.cell.text = ''; // Limpa o texto
+                        
+                        let imgData = null;
+                        
+                        try {
+                            JsBarcode(tempCanvas, code, {
+                                format: "CODE128",
+                                displayValue: false,
+                                background: '#ffffff',
+                                lineColor: '#000000',
+                                height: 40, 
+                                margin: 2
+                            });
+                            imgData = tempCanvas.toDataURL('image/png');
+                        } catch (e) {
+                            console.warn("Erro ao gerar barcode para PDF:", e);
+                            return; 
+                        }
+                        
+                        if (imgData) {
+                            const imgWidth = 90; 
+                            const imgHeight = 30;
+                            // Centraliza a imagem na célula
+                            const x = data.cell.x + (data.cell.width - imgWidth) / 2;
+                            const y = data.cell.y + (data.cell.height - imgHeight) / 2;
+                            
+                            pdf.addImage(imgData, 'PNG', x, y, imgWidth, imgHeight);
+                        }
+                    }
+                },
+                // Altura mínima da linha para o barcode caber
+                bodyStyles: {
+                    minCellHeight: 45
+                }
+            });
+
+            return pdf; // Retorna o documento PDF pronto
+        }
+
+        // 2. FUNÇÃO PARA BAIXAR O PDF (Antiga handleGeneratePDF)
+        function handleDownloadPDF() {
+            const pdfButtonText = pdfButton.textContent;
+            
+            pdfButton.disabled = true;
+            pdfButton.textContent = "Gerando...";
+
+            try {
+                // Gera o documento
+                const pdf = generatePDFDocument();
+                // Salva o arquivo
+                pdf.save('lista_de_baixa.pdf');
+                
+            } catch (error) {
+                console.error("Erro ao gerar PDF para download:", error);
+                showMessage('Erro ao gerar PDF: ' + error.message, 'add-message');
+            }
+            
+            pdfButton.disabled = false;
+            pdfButton.textContent = pdfButtonText;
+        }
+
+        // 3. NOVA FUNÇÃO PARA IMPRIMIR O PDF (Sem baixar)
+        // === FUNÇÃO CORRIGIDA ===
+        function handlePrintPDF() {
+            const printButtonText = printPdfButton.textContent;
+            printPdfButton.disabled = true;
+            printPdfButton.textContent = "Preparando...";
+
+            try {
+                // 1. Gera o documento PDF
+                const pdf = generatePDFDocument();
+                
+                // 2. Adiciona a instrução para auto-impressão
+                pdf.autoPrint();
+
+                // 3. Gera o PDF como uma Blob URL (em vez de Data URI)
+                const pdfBlobUrl = pdf.output('bloburl');
+
+                // 4. Remove o iframe de impressão antigo, se existir
+                let printFrame = document.getElementById('print-pdf-frame');
+                if (printFrame) {
+                    printFrame.parentNode.removeChild(printFrame);
+                }
+
+                // 5. Cria um novo iframe oculto
+                printFrame = document.createElement('iframe');
+                printFrame.id = 'print-pdf-frame';
+                printFrame.style.display = 'none'; // Oculta o iframe
+                document.body.appendChild(printFrame);
+
+                // 6. Define a fonte do iframe como a Blob URL
+                printFrame.src = pdfBlobUrl;
+                
+                // 7. Reabilita o botão. A impressão será acionada pelo 'autoPrint'
+                // Não precisamos mais do 'onload' ou de 'contentWindow.print()'
+                printPdfButton.disabled = false;
+                printPdfButton.textContent = printButtonText;
+                
+                // O 'onload' foi removido, pois a chamada 'contentWindow.print()'
+                // estava causando o erro de cross-origin.
+                // A função 'pdf.autoPrint()' instrui o visualizador de PDF
+                // a abrir o diálogo de impressão automaticamente.
+
+            } catch (error) {
+                // Captura erros na geração do PDF
+                console.error("Erro ao preparar PDF para impressão:", error);
+                showMessage('Erro ao preparar PDF: ' + error.message, 'add-message');
+                printPdfButton.disabled = false;
+                printPdfButton.textContent = printButtonText;
+            }
+        }
+
+
+        // --- FUNÇÕES UTILITÁRIAS ---
+        function showMessage(message, elementId) {
+            const el = document.getElementById(elementId);
+            if(el) {
+                el.textContent = message;
+                setTimeout(() => {
+                    if (el.textContent === message) {
+                        el.textContent = '';
+                    }
+                }, 3000);
+            }
+        }
+
+        function parseBarcode(rawInput) {
+            const input = rawInput.trim();
+            
+            if (input.startsWith('2') && input.length >= 18) {
+                const segundoDigito = input.substring(1, 2);
+                if (['0', '1', '2', '3', '4', '5', '6'].includes(segundoDigito)) {
+                    const internalCode = input.substring(1, 6);
+                    const finalCode = parseInt(internalCode, 10).toString(); 
+                    
+                    const weightCode = input.substring(13, 18);
+                    const finalQuantity = parseFloat(weightCode) / 1000.0;
+
+                    if (!isNaN(finalQuantity) && finalQuantity > 0) {
+                        console.log(`Barcode parse (Balança 5-dig): ${input} -> Code: ${finalCode}, Qtd: ${finalQuantity}`);
+                        return { code: finalCode, quantity: finalQuantity };
+                    }
+                }
+            }
+
+            if (input.startsWith('2') && input.length >= 6) {
+                const segundoDigito = input.substring(1, 2); 
+                if (['0', '1', '2', '3', '4', '5', '6'].includes(segundoDigito)) {
+                    const internalCode = input.substring(1, 6);
+                    const finalCode = parseInt(internalCode, 10).toString(); 
+                    console.log(`Barcode parse (Interno/Balança): ${input} -> Code: ${finalCode}, Qtd: null`);
+                    return { code: finalCode, quantity: null };
+                }
+            }
+
+            if (input.startsWith('2') && input.length > 13) {
+                const segundoDigito = input.substring(1, 2);
+                if (['7', '8', '9'].includes(segundoDigito)) {
+                    const extractedEAN = input.substring(1, 14);
+                    if (extractedEAN.length === 13) {
+                        console.log(`Barcode parse (GS1/EAN): ${input} -> Code: ${extractedEAN}, Qtd: null`);
+                        return { code: extractedEAN, quantity: null };
+                    }
+                }
+            }
+
+            if (input.length > 13 && /^\d+$/.test(input) && !input.startsWith('2')) {
+                 const extractedEAN = input.substring(1, 14); 
+                if (extractedEAN.length === 13) {
+                    console.log(`Barcode parse (GS1 Genérico): ${input} -> Code: ${extractedEAN}, Qtd: null`);
+                    return { code: extractedEAN, quantity: null };
+                }
+            }
+            
+            console.log(`Barcode parse (Padrão): ${input} -> Code: ${input}, Qtd: null`);
+            return { code: input, quantity: null };
+        }
+
+    </script>
+
+</body>
+</html>
